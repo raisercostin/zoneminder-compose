@@ -54,7 +54,7 @@ echo "DEBUG: mysqlshow exit code = $RC"
 TABLE_CHECK=$(mysql --silent --skip-column-names \
   --host="$ZM_DB_HOST" --user="$ZM_DB_USER" --password="$ZM_DB_PASS" \
   -e "SELECT COUNT(*) FROM information_schema.tables \
-      WHERE table_schema='$ZM_DB_NAME' AND table_name='Monitor';")
+      WHERE table_schema='$ZM_DB_NAME' AND table_name='Monitors';")
 
 if [ "$TABLE_CHECK" -eq 0 ]; then
   echo "🛠 loading ZoneMinder schema (Monitor table missing)…"
