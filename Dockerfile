@@ -15,6 +15,9 @@ RUN apt-get install -y --no-install-recommends php-fpm mariadb-client
 # 3) Install ZoneMinder (last install step)
 RUN apt-get install -y --no-install-recommends zoneminder
 
+# Install additional tools
+RUN apt-get install -y --no-install-recommends pv
+
 # 3.1) Configure php‑fpm logging to stdout/stderr
 RUN sed -i \
     -e 's|;error_log = .*|error_log = /proc/self/fd/2|' \
@@ -28,7 +31,16 @@ RUN sed -i \
     -e 's|;listen.group = www-data|listen.group = www-data|' \
     /etc/php/8.1/fpm/pool.d/www.conf
 
-# 5) Embed entrypoint via heredoc (BuildKit required)
+# 5) Override DB connection in conf.d so zm.conf localhost is replaced. See also /etc/zm/zm.conf
+RUN mkdir -p /etc/zm/conf.d
+COPY <<EOF /etc/zm/conf.d/99-docker.conf
+ZM_DB_HOST=${ZM_DB_HOST}
+ZM_DB_PORT=3306
+ZM_DB_SOCKET=
+EOF
+RUN ls -al /etc/zm/conf.d && cat /etc/zm/conf.d/99-docker.conf
+
+# 6) Embed entrypoint via heredoc (BuildKit required)
 COPY <<'EOF' /usr/local/bin/docker-entrypoint.sh
 #!/bin/sh
 set -e
@@ -73,9 +85,6 @@ fi
 
 exec php-fpm8.1 --nodaemonize
 EOF
-
-# Install additional tools
-RUN apt-get install -y --no-install-recommends pv
 
 RUN \
   chmod +x /usr/local/bin/docker-entrypoint.sh && \
