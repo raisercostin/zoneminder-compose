@@ -9,10 +9,8 @@ RUN apt-get update \
  && apt-get install -y software-properties-common \
  && add-apt-repository -y ppa:iconnor/zoneminder-1.36
 
-# 2) Install standard deps (php‑fpm, MariaDB client, mysql-client)
-RUN apt-get install -y --no-install-recommends \
-      php-fpm \
-      mariadb-client
+# 2) Install standard deps (php‑fpm, MariaDB client)
+RUN apt-get install -y --no-install-recommends php-fpm mariadb-client
 
 # 3) Install ZoneMinder (last install step)
 RUN apt-get install -y --no-install-recommends zoneminder
@@ -31,30 +29,54 @@ RUN sed -i \
     /etc/php/8.1/fpm/pool.d/www.conf
 
 # 5) Embed entrypoint via heredoc (BuildKit required)
-COPY <<EOF /usr/local/bin/docker-entrypoint.sh
+COPY <<'EOF' /usr/local/bin/docker-entrypoint.sh
 #!/bin/sh
 set -e
 
-: "\${ZM_DB_HOST:=db}"
-: "\${ZM_DB_NAME:=zm}"
-: "\${ZM_DB_USER:=zmuser}"
-: "\${ZM_DB_PASS:=zmpass}"
+: "${ZM_DB_ROOT_PASS:=rootpass}"
+: "${ZM_DB_HOST:=db}"
+: "${ZM_DB_NAME:=zm}"
+: "${ZM_DB_USER:=zmuser}"
+: "${ZM_DB_PASS:=zmpass}"
 
-until mysqladmin -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" ping; do
-  echo "waiting for DB at \$ZM_DB_HOST…"
+until mysqladmin --host="$ZM_DB_HOST" --user="$ZM_DB_USER" --password="$ZM_DB_PASS" ping --silent; do
+  echo "⏳ waiting for DB at $ZM_DB_HOST…"
   sleep 2
 done
 
-if ! mysqlshow -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" "\$ZM_DB_NAME" ; then
-  echo "🛠 initializing ZoneMinder schema…"
-  mysql -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" \
-    -e "CREATE DATABASE IF NOT EXISTS \`\$ZM_DB_NAME\`;"
-  mysql -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" \
-    "\$ZM_DB_NAME" < /usr/share/zoneminder/db/zm_create.sql
+# DEBUG block start
+echo "DEBUG: checking if database '$ZM_DB_NAME' exists on '$ZM_DB_HOST' as '$ZM_DB_USER'"
+mysqlshow --host="$ZM_DB_HOST" --user="$ZM_DB_USER" --password="$ZM_DB_PASS" "$ZM_DB_NAME" >/dev/null 2>&1
+RC=$?
+echo "DEBUG: mysqlshow exit code = $RC"
+# DEBUG block end
+# Check for a missing ZoneMinder table instead of the database itself
+TABLE_CHECK=$(mysql --silent --skip-column-names \
+  --host="$ZM_DB_HOST" --user="$ZM_DB_USER" --password="$ZM_DB_PASS" \
+  -e "SELECT COUNT(*) FROM information_schema.tables \
+      WHERE table_schema='$ZM_DB_NAME' AND table_name='Monitor';")
+
+if [ "$TABLE_CHECK" -eq 0 ]; then
+  echo "🛠 loading ZoneMinder schema (Monitor table missing)…"
+  pv /usr/share/zoneminder/db/zm_create.sql \
+    | mysql --force --host="$ZM_DB_HOST" --user="$ZM_DB_USER" --password="$ZM_DB_PASS" \
+    "$ZM_DB_NAME"
+  echo "🛠 loading ZoneMinder schema (Monitor table missing)… done."
+  echo "🔐 granting ZoneMinder user privileges…"
+  mysql --host="$ZM_DB_HOST" \
+    -u root -p"$ZM_DB_ROOT_PASS" \
+    -e "GRANT LOCK TABLES,ALTER,DROP,SELECT,INSERT,UPDATE,CREATE,INDEX,\
+        ALTER ROUTINE,CREATE ROUTINE,TRIGGER,EXECUTE,REFERENCES \
+        ON \`$ZM_DB_NAME\`.* TO '$ZM_DB_USER'@'%' IDENTIFIED BY '$ZM_DB_PASS';"
+  echo "🔐 granting ZoneMinder user privileges… done."
 fi
 
 exec php-fpm8.1 --nodaemonize
 EOF
+
+# Install additional tools
+RUN apt-get install -y --no-install-recommends pv
+
 RUN \
   chmod +x /usr/local/bin/docker-entrypoint.sh && \
   ls -al /usr/local/bin/docker-entrypoint.sh && \
@@ -65,7 +87,8 @@ ENV TZ=UTC \
     ZM_DB_HOST=db \
     ZM_DB_NAME=zm \
     ZM_DB_USER=zmuser \
-    ZM_DB_PASS=zmpass
+    ZM_DB_PASS=zmpass \
+    ZM_DB_ROOT_PASS=rootpass
 
 VOLUME ["/var/cache/zoneminder","/var/log/zoneminder","/etc/zm"]
 EXPOSE 9000

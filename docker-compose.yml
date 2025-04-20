@@ -23,6 +23,7 @@ services:
       ZM_DB_NAME: zm
       ZM_DB_USER: zmuser
       ZM_DB_PASS: zmpass
+      ZM_DB_ROOT_PASS: rootpass
     volumes:
       - zm_cache:/var/cache/zoneminder
       - zm_logs:/var/log/zoneminder
