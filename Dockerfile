@@ -32,12 +32,18 @@ RUN sed -i \
     /etc/php/8.1/fpm/pool.d/www.conf
 
 # 5) Override DB connection in conf.d so zm.conf localhost is replaced. See also /etc/zm/zm.conf
-RUN mkdir -p /etc/zm/conf.d
-COPY <<EOF /etc/zm/conf.d/99-docker.conf
-ZM_DB_HOST=${ZM_DB_HOST}
-ZM_DB_PORT=3306
-ZM_DB_SOCKET=
-EOF
+RUN mkdir -p /etc/zm/conf.d \
+ && echo "ZM_DB_HOST=${ZM_DB_HOST}" >  /etc/zm/conf.d/99-docker.conf \
+ && echo "ZM_DB_PORT=3306"              >> /etc/zm/conf.d/99-docker.conf \
+ && echo "ZM_DB_SOCKET="                >> /etc/zm/conf.d/99-docker.conf
+
+#RUN mkdir -p /etc/zm/conf.d
+#COPY <<'EOF' /etc/zm/conf.d/99-docker.conf
+#ZM_DB_HOST=${ZM_DB_HOST}
+#ZM_DB_PORT=3306
+#ZM_DB_SOCKET=
+##aaa
+#EOF
 RUN ls -al /etc/zm/conf.d && cat /etc/zm/conf.d/99-docker.conf
 
 # 6) Embed entrypoint via heredoc (BuildKit required)
