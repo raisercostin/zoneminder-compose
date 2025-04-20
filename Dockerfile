@@ -18,6 +18,9 @@ RUN apt-get install -y --no-install-recommends zoneminder
 # Install additional tools
 RUN apt-get install -y --no-install-recommends pv
 
+RUN echo "date.timezone = ${TZ}" \
+    > /etc/php/8.1/fpm/conf.d/99-timezone.ini
+
 # 3.1) Configure php‑fpm logging to stdout/stderr
 RUN sed -i \
     -e 's|;error_log = .*|error_log = /proc/self/fd/2|' \
