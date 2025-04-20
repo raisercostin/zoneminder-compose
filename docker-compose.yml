@@ -1,0 +1,37 @@
+services:
+  zoneminder-db:
+    image: mariadb:10.5
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+      MARIADB_DATABASE: zm
+      MARIADB_USER: zmuser
+      MARIADB_PASSWORD: zmpass
+    volumes:
+      - db_data:/var/lib/mysql
+
+  zoneminder:
+    build:
+      context: .
+      dockerfile: Dockerfile    # ← here you point to your Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - zoneminder-db
+    environment:
+      TZ: UTC
+      ZM_DB_HOST: zoneminder-db
+      ZM_DB_NAME: zm
+      ZM_DB_USER: zmuser
+      ZM_DB_PASS: zmpass
+    volumes:
+      - zm_cache:/var/cache/zoneminder
+      - zm_logs:/var/log/zoneminder
+      - zm_etc:/etc/zm
+    ports:
+      - "9000:9000"
+
+volumes:
+  db_data:
+  zm_cache:
+  zm_logs:
+  zm_etc:

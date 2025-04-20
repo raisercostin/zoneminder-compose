@@ -17,7 +17,20 @@ RUN apt-get install -y --no-install-recommends \
 # 3) Install ZoneMinder (last install step)
 RUN apt-get install -y --no-install-recommends zoneminder
 
-# 4) Embed entrypoint via heredoc (BuildKit required)
+# 3.1) Configure php‑fpm logging to stdout/stderr
+RUN sed -i \
+    -e 's|;error_log = .*|error_log = /proc/self/fd/2|' \
+    -e 's|;access.log = .*|access.log = /proc/self/fd/1|' \
+    /etc/php/8.1/fpm/php-fpm.conf
+
+# 4) Configure PHP‑FPM to listen on TCP port 9000 instead of socket
+RUN sed -i \
+    -e 's|listen = /run/php/php8.1-fpm.sock|listen = 9000|' \
+    -e 's|;listen.owner = www-data|listen.owner = www-data|' \
+    -e 's|;listen.group = www-data|listen.group = www-data|' \
+    /etc/php/8.1/fpm/pool.d/www.conf
+
+# 5) Embed entrypoint via heredoc (BuildKit required)
 COPY <<EOF /usr/local/bin/docker-entrypoint.sh
 #!/bin/sh
 set -e
@@ -27,12 +40,12 @@ set -e
 : "\${ZM_DB_USER:=zmuser}"
 : "\${ZM_DB_PASS:=zmpass}"
 
-until mysqladmin ping -h"\$ZM_DB_HOST" --silent; do
-  echo "⏳ waiting for DB at \$ZM_DB_HOST…"
+until mysqladmin -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" ping; do
+  echo "waiting for DB at \$ZM_DB_HOST…"
   sleep 2
 done
 
-if ! mysqlshow -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" "\$ZM_DB_NAME" >/dev/null 2>&1; then
+if ! mysqlshow -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" "\$ZM_DB_NAME" ; then
   echo "🛠 initializing ZoneMinder schema…"
   mysql -h"\$ZM_DB_HOST" -u"\$ZM_DB_USER" -p"\$ZM_DB_PASS" \
     -e "CREATE DATABASE IF NOT EXISTS \`\$ZM_DB_NAME\`;"
@@ -42,9 +55,12 @@ fi
 
 exec php-fpm8.1 --nodaemonize
 EOF
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh && ls -al /usr/local/bin/docker-entrypoint.sh
+RUN \
+  chmod +x /usr/local/bin/docker-entrypoint.sh && \
+  ls -al /usr/local/bin/docker-entrypoint.sh && \
+  mkdir -p /run/php
 
-# 5) Runtime ENV (override at docker run)
+# 6) Runtime ENV (override at docker run)
 ENV TZ=UTC \
     ZM_DB_HOST=db \
     ZM_DB_NAME=zm \
